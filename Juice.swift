@@ -6,12 +6,11 @@ import SwiftUI
 // MARK: - Design Tokens
 
 private enum DS {
-    static let bg      = Color(red: 0.98, green: 0.98, blue: 0.99)
-    static let surface = Color(red: 0.93, green: 0.93, blue: 0.95)
-    static let primary   = Color(red: 0.10, green: 0.10, blue: 0.12)
-    static let secondary = Color(red: 0.56, green: 0.56, blue: 0.60)
+    static let surface   = Color(nsColor: .controlBackgroundColor)
+    static let primary   = Color(nsColor: .labelColor)
+    static let secondary = Color(nsColor: .secondaryLabelColor)
     static let accent    = Color(red: 1.0,  green: 0.39, blue: 0.33)
-    static let divider   = Color.black.opacity(0.07)
+    static let divider   = Color(nsColor: .separatorColor)
     static let width: CGFloat = 280
     static let hPad:  CGFloat = 16
 }
@@ -29,7 +28,7 @@ struct HoverRow<Content: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, DS.hPad)
                 .padding(.vertical, 10)
-                .background(hovering ? DS.surface : Color.clear)
+                .background(hovering ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.12) : Color.clear)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -219,7 +218,7 @@ struct AlertView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 20)
-                .fill(DS.bg)
+                .fill(Color(nsColor: .windowBackgroundColor))
                 .shadow(color: .black.opacity(0.14), radius: 30, y: 8)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
@@ -341,8 +340,7 @@ struct MenuBarView: View {
             }
         }
         .frame(width: DS.width)
-        .background(DS.bg)
-        .preferredColorScheme(.light)
+        .background(.regularMaterial)
         .onAppear {
             monitor.threshold = Int(threshold)
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -362,7 +360,7 @@ struct JuiceApp: App {
                 .environmentObject(monitor)
         } label: {
             Image(systemName: monitor.iconName)
-                .symbolRenderingMode(.hierarchical)
+                .symbolRenderingMode(.monochrome)
         }
         .menuBarExtraStyle(.window)
     }
