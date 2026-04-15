@@ -1,6 +1,6 @@
 # Juice
 
-A lightweight macOS menu bar app that monitors your battery level and shows a large centered overlay when it drops below a threshold you choose.
+A lightweight macOS menu bar app that monitors your battery and blocks your screen when it drops below a threshold — until you plug in.
 
 ## Requirements
 
@@ -10,34 +10,32 @@ A lightweight macOS menu bar app that monitors your battery level and shows a la
 ## Build & Run
 
 ```bash
-swiftc -parse-as-library \
-  -framework Cocoa \
-  -framework IOKit \
-  -framework SwiftUI \
-  Juice.swift -o Juice
-
-./Juice
+make open
 ```
 
-The app appears in your menu bar as a drop icon. It has no Dock icon.
+Or install to `/Applications`:
+
+```bash
+make install
+```
 
 ## Usage
 
-- **Menu bar icon** — glanceable battery state:
-  - `drop.fill` — normal
-  - `drop.halffull` — getting close to your threshold
-  - `drop.triangle.fill` — at or below threshold
+**Menu bar icon** reflects battery level at a glance:
+- `drop.fill` — above 10%
+- `drop.halffull` — at or below 10%
 
-- **Click the icon** to open the menu:
-  - Current battery percentage and power source
-  - **Alert at** slider — drag to set your threshold (5–50%, default 20%)
-  - The threshold is saved across relaunches
+**Click the icon** to open the menu:
+- Current battery percentage and power status
+- **Alert threshold** slider — set the level that triggers the overlay (1–10%, default 5%)
+- **Launch at Login** toggle
+- Quit
 
-- **Alert overlay** — when the battery hits your threshold while on battery power, a large overlay appears in the center of your screen. It auto-dismisses after 10 seconds or tap Dismiss.
+**Overlay** — when the battery hits your threshold while unplugged, a full overlay appears in the center of your screen. It stays there until you plug in. No dismiss button.
 
 ## Notes
 
 - No special permissions required. IOKit battery access is available to all user-space apps.
-- The overlay is a standard `NSPanel` (not a system notification), so no notification permission prompt.
-- Polling intervals adapt to battery level: every 60 min above 30%, 30 min from 10–30%, 5 min below 10%. This keeps CPU/battery impact negligible.
-- To launch at login, drag `Juice` to **System Settings → General → Login Items**.
+- Charger plug/unplug is detected instantly via an IOKit run loop notification — no polling lag.
+- Polling intervals adapt to battery level: every 30 min above 50%, 15 min from 20–50%, 5 min from 10–20%, 30 sec below 10%.
+- Launch at Login is managed through `SMAppService` — toggling it registers or unregisters the app directly in System Settings → General → Login Items.
