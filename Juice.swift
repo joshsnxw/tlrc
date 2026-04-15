@@ -56,13 +56,12 @@ private enum TimerTier: Equatable {
 // MARK: - Alert Overlay
 
 final class AlertOverlayController {
-    private var panel:       NSPanel?
-    private var dismissWork: DispatchWorkItem?
+    private var panel: NSPanel?
 
     func show(level: Int) {
         guard panel == nil else { return }
 
-        let view = AlertView(level: level) { [weak self] in self?.dismiss() }
+        let view = AlertView(level: level)
         let hosting = NSHostingView(rootView: view)
         hosting.frame = NSRect(x: 0, y: 0, width: 320, height: 280)
 
@@ -88,15 +87,9 @@ final class AlertOverlayController {
 
         panel = p
         p.orderFrontRegardless()
-
-        let work = DispatchWorkItem { [weak self] in self?.dismiss() }
-        dismissWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
     }
 
     func dismiss() {
-        dismissWork?.cancel()
-        dismissWork = nil
         panel?.orderOut(nil)
         panel = nil
     }
@@ -111,43 +104,87 @@ final class BatteryMonitor: ObservableObject {
 
     var threshold: Int = 5
 
-    private var hasAlerted:  Bool      = false
-    private var currentTier: TimerTier = .slow
+    private var hasAlerted:  Bool            = false
+    private var currentTier: TimerTier       = .slow
     private var timer:       Timer?
+    private var powerSource: CFRunLoopSource?
     private let overlay = AlertOverlayController()
 
     init() {
         readBattery()
         scheduleTier(tierFor())
+        registerPowerNotifications()
     }
+
+    deinit {
+        if let src = powerSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .defaultMode)
+        }
+    }
+
+    // MARK: Power source notifications
+
+    private func registerPowerNotifications() {
+        let ctx = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        guard let src = IOPSNotificationCreateRunLoopSource({ ctx in
+            guard let ctx else { return }
+            Unmanaged<BatteryMonitor>.fromOpaque(ctx).takeUnretainedValue().readBattery()
+        }, ctx)?.takeRetainedValue() else { return }
+
+        powerSource = src
+        CFRunLoopAddSource(CFRunLoopGetMain(), src, .defaultMode)
+    }
+
+    // MARK: Read
 
     func readBattery() {
         guard
             let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-            let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef],
-            let src  = list.first,
-            let desc = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue()
-                           as? [String: Any]
+            let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef]
         else { return }
 
-        batteryLevel = (desc[kIOPSCurrentCapacityKey as String] as? Int)  ?? batteryLevel
-        isCharging   = (desc[kIOPSIsChargingKey       as String] as? Bool) ?? false
-        let state    =  desc[kIOPSPowerSourceStateKey as String] as? String ?? ""
-        isOnBattery  = (state == (kIOPSBatteryPowerValue as String))
+        // Determine power source from the system level, not per-source state field
+        let providerType = IOPSGetProvidingPowerSourceType(info)?.takeRetainedValue() as? String ?? ""
+        isOnBattery = (providerType == (kIOPSBatteryPowerValue as String))
+
+        for src in list {
+            guard
+                let desc = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue()
+                               as? [String: Any],
+                let type = desc[kIOPSTypeKey as String] as? String,
+                type == (kIOPSInternalBatteryType as String)
+            else { continue }
+
+            batteryLevel = (desc[kIOPSCurrentCapacityKey as String] as? Int)  ?? batteryLevel
+            isCharging   = (desc[kIOPSIsChargingKey       as String] as? Bool) ?? false
+            break
+        }
 
         checkAlertCondition()
         let newTier = tierFor()
         if newTier != currentTier { scheduleTier(newTier) }
     }
 
+    // MARK: Alert logic
+
     private func checkAlertCondition() {
         if batteryLevel > threshold + 5 { hasAlerted = false }
-        if batteryLevel <= threshold && !hasAlerted && isOnBattery {
+
+        // Plugged in — dismiss overlay and reset so it fires again next time
+        if !isOnBattery {
+            hasAlerted = false
+            DispatchQueue.main.async { [weak self] in self?.overlay.dismiss() }
+            return
+        }
+
+        if batteryLevel <= threshold && !hasAlerted {
             hasAlerted = true
             let level = batteryLevel
             DispatchQueue.main.async { [weak self] in self?.overlay.show(level: level) }
         }
     }
+
+    // MARK: Timer
 
     private func tierFor() -> TimerTier {
         if isCharging || batteryLevel > 30 { return .slow   }
@@ -171,8 +208,7 @@ final class BatteryMonitor: ObservableObject {
 // MARK: - Alert View
 
 struct AlertView: View {
-    let level:     Int
-    let onDismiss: () -> Void
+    let level: Int
 
     @State private var scale:   CGFloat = 0.88
     @State private var opacity: Double  = 0.0
@@ -200,11 +236,10 @@ struct AlertView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(DS.secondary)
 
-                Button("Dismiss") { onDismiss() }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DS.accent)
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
+                Text("Plug in to continue")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DS.secondary.opacity(0.6))
+                    .padding(.top, 2)
             }
             .padding(32)
         }
